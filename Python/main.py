@@ -1,76 +1,15 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 # Import necessary modules
 import os
 import decimal as dc
 import datetime
 import curses
-
-
-# Define a class for the records
-
-class Record:
-
-    def __init__(self, key, date, name, amount, nature):
-        self.key = key
-        self.date = date
-        self.name = name
-        self.amount = amount
-        # 0 : Credit
-        # 1 : Debit
-        self.nature = nature
-
-    def __repr__(self):
-        rep = '/'.join(self.date) + ' | ' + self.name.ljust(30)
-        rep += "\t| Amount : " + '-'*self.nature + str(self.amount).ljust(5)
-        rep += "\t| Key : " + str(self.key)
-        return rep
-
-    def add(self, data):
-        if self.nature:
-            data['currMonth'] -= self.amount
-        else:
-            data['currMonth'] += self.amount
-        data[self.key] = self
-
-    def mod(self, data):
-        record = data.pop(self.key)
-        if record.nature:
-            data['currMonth'] += record.amount
-        else:
-            data['currMonth'] -= record.amount
-        self.add(data)
-
-    def rem(self, data):
-        if self.nature:
-            data['currMonth'] += self.amount
-        else:
-            data['currMonth'] -= self.amount
-        del data[self.key]
-
-    def save(self):
-        key = str(self.key)
-        date = '_'.join(self.date)
-        name = self.name
-        amount = str(self.amount)
-        nature = str(self.nature)
-        attr = [key, date, name, amount, nature]
-        return ';'.join(attr)
-
-    def show(self, key=False):
-        rep = '/'.join(self.date) + ' | ' + self.name.ljust(30)
-        rep += "\t| " + [' ', '-'][self.nature] + str(self.amount).ljust(5)
-        if key:
-            rep += "\t| Key : " + str(self.key)
-        print(rep)
+from Classes import Record, Form, Field
 
 
 def init():
-
-    # Initialize the screen
-    stdscr = curses.initscr()
-    curses.noecho()
-    curses.cbreak()
-    stdscr.keypad(True)
-
     # Initialize variables
     cwd = os.getcwd()
     dc.getcontext().prec = 50
@@ -118,7 +57,15 @@ def init():
             'months': months,
             'loaded': False,
             'data': {},
-            'stay': True
+            'stay': True,
+            'alphabet': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k',
+                         'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+                         'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
+                         'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+                         'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2',
+                         '3', '4', '5', '6', '7', '8', '9', ' ', '-', '_', '.',
+                         ',',
+                         ],
             }
 
     return var, strings, keyWords
@@ -131,7 +78,7 @@ def init():
 # Open the requested file and return the file, its path and if it was created
 
 def openFile(fileName, year, cwd):
-    filePath = os.path.join(cwd, '..', 'Files', year, '') + fileName
+    filePath = os.path.join(cwd, 'Files', year, '') + fileName
     created = False
     if os.path.isfile(filePath):
         file = open(filePath, 'rt')
@@ -183,7 +130,7 @@ def findPrev(month, year, created, cwd):
     if month != '01':
         pMonth = '%02d' % (int(month) - 1)
         fileName = pMonth + '_' + year + '.sav'
-        filePath = os.path.join(cwd, '..', 'Files', year, '') + fileName
+        filePath = os.path.join(cwd, 'Files', year, '') + fileName
         if os.path.isfile(filePath):
             file = open(filePath, 'rt')
             line = file.readline().strip('\n')
@@ -191,9 +138,9 @@ def findPrev(month, year, created, cwd):
             file.close()
     else:
         pYear = str(int(year) - 1)
-        if os.path.isdir(os.path.join(cwd, '..', 'Files', pYear, '')):
+        if os.path.isdir(os.path.join(cwd, 'Files', pYear, '')):
             fileName = '12_' + pYear + '.sav'
-            filePath = os.path.join(cwd, '..', 'Files', pYear, '') + fileName
+            filePath = os.path.join(cwd, 'Files', pYear, '') + fileName
             if os.path.isfile(filePath):
                 file = open(filePath, 'rt')
                 line = file.readline().strip('\n')
@@ -201,7 +148,7 @@ def findPrev(month, year, created, cwd):
                 file.close()
     if prevMonth == dc.Decimal(0) and not created:
         fileName = month + '_' + year + '.sav'
-        filePath = os.path.join(cwd, '..', 'Files', year, '') + fileName
+        filePath = os.path.join(cwd, 'Files', year, '') + fileName
         if os.path.isfile(filePath):
             file = open(filePath, 'rt')
             line = file.readline().strip('\n')
@@ -267,7 +214,7 @@ def loadYear(var):
     year = var['year']
     months = var['months']
     month = var['month']
-    path = os.path.join(cwd, '..', 'Files', year)
+    path = os.path.join(cwd, 'Files', year)
     if not os.path.isdir(path):
         os.makedirs(path)
     for m in months:
@@ -282,101 +229,61 @@ def loadYear(var):
 
 # Load a Year or a month
 
-def _load(var, strings, args=[]):
-    n = len(args)
+def _load(var, strings, stdscr, args=[]):
     orYear = var['orYear']
     orMonth = var['orMonth']
     year = var['year']
     loaded = var['loaded']
 
-    if not loaded:
-        selection = 'y'
-        var['loaded'] = True
+    # Create and fill the Form
+    yearF = Field('Selectionner l\'année', content=str(orYear))
+    monthF = Field('Selectionner le mois', content=str(orMonth))
+    loadForm = Form('Load Data', items=[yearF, monthF])
+    loadForm.fill(stdscr, var['alphabet'])
 
-    if n == 1 and args[0] in ['y', 'm']:
-        selection = args[0]
-        month = '0'
-    else:
-        loading = True
-        while loading:
-            ans = input("\n" + strings['selectLoad'] + "\n> ")
-            if ans.isnumeric():
-                if int(ans) in range(1, 13):
-                    selection = 'm'
-                    month = "%02d" % int(ans)
-                    loading = False
-                elif ans == '0':
-                    selection = 'y'
-                    loading = False
-            elif not ans:
-                selection = 'y'
-                loading = False
+    # Retrieve Form data
+    aYear, aMonth = loadForm.retrieve()
+    aYear = aYear.strip()
+    aMonth = aMonth.strip()
 
-    if selection == 'y':
-        loading = True
-        while loading:
-            ans = input("\n" + strings['selectYear'] + orYear + "\n> ")
-            if not ans:
-                year = orYear
-                loading = False
-            elif ans.isnumeric():
-                year = ans
-                loading = False
-        var['year'] = year
-        loadYear(var)
-
-    elif selection == 'm':
-        if month == '0':
-            loading = True
-            while loading:
-                ans = input("\n" + strings['selectMonth'] + orMonth + "\n> ")
-                if ans.isnumeric():
-                    if int(ans) in range(1, 13):
-                        selection = 'm'
-                        month = "%02d" % int(ans)
-                        loading = False
-                    elif not ans:
-                        month = orMonth
-                        loading = False
-        var['month'] = month
-        loadMonth(var)
+    if aMonth.isnumeric() and int(aMonth) in range(1, 13):
+        month = "%02d" % int(aMonth)
+        if (year != aYear or not loaded) and aYear.isnumeric():
+            year = aYear
+            var['year'] = year
+            var['loaded'] = True
+            loadYear(var)
+        elif loaded:
+            var['month'] = month
+            loadMonth(var)
 
 
-def _add(var, strings, args=[]):
-    loaded = var['loaded']
+def _add(var, strings, stdscr, args=[]):
     month = var['month']
     year = var['year']
     data = var['data'][month][0]
-    if loaded:
-        ok = True
-        while ok:
-            day = input("Select the day :\n")
-            if day.isnumeric():
-                day = str("%02d" % int(day))
-                ok = False
-        date = [day, month, year]
-        print("Date selected : " + '/'.join(date))
-        name = input(strings['selectName'] + "\n> ")
-        ok = True
-        while ok:
-            nature = input(strings['selectNat'] + "\n> ")
-            if nature == '':
-                nature = 1
-                ok = False
-            elif nature.isnumeric():
-                nature = bool(int(nature))*1
-                ok = False
-        amount = ''
-        while not amount:
-            amount = input(strings['selectAmount'] + "\n> ")
-            amount = dc.Decimal(amount)
+
+    # Create and fill the Form
+    dayF = Field('Jour de l\'opération')
+    nameF = Field('Nom de l\'opération')
+    natF = Field('c -> Crédit, d -> Débit', content='d')
+    amountF = Field('Montant de l\'opération')
+    addForm = Form('Add Record', items=[dayF, nameF, natF, amountF])
+    addForm.fill(stdscr, var['alphabet'])
+
+    # Retrieve Form data
+    aDay, aName, aNat, aAmount = addForm.retrieve()
+    if aDay.isnumeric():
+        aDay = str("%02d" % int(aDay))
+        date = [aDay, month, year]
+        if aNat in ['d', 'c']:
+            aNat = (aNat == 'd')*1
+            aAmount = dc.Decimal(aAmount)
             key = createKey(data)
-        record = Record(key, date, name, amount, nature)
-        record.add(data)
-        var['data'][month][0] = data
-        print("Record added :\n")
-        record.show()
-        _save(var, strings)
+            record = Record(key, date, aName, aAmount, aNat)
+            record.add(data)
+            var['data'][month][0] = data
+            _save(var, strings, stdscr)
 
 
 def _mod(var, strings, args=[]):
@@ -434,7 +341,7 @@ def _rem(var, strings, args=[]):
             print("Invalid key")
 
 
-def _save(var, strings, args=[]):
+def _save(var, strings, stdscr, args=[]):
     month = var['month']
     loaded = var['loaded']
     if loaded:
@@ -458,7 +365,7 @@ def _show(var, strings, args=[], situation=True, key=False):
         print("\nNo file loaded")
 
 
-def _exit(var, strings, args=[]):
+def _exit(var, strings, stdscr, args=[]):
     if var['loaded']:
         months = var['months']
         data = var['data']
@@ -469,22 +376,154 @@ def _exit(var, strings, args=[]):
     var['stay'] = False
 
 
-
-
 def _debug(var, strings, args=[]):
     print(var)
 
 
+def drawscreen(stdscr):
+    vline = curses.ACS_VLINE
+    hline = curses.ACS_HLINE
+    # s1 = curses.ACS_S1
+    # s3 = curses.ACS_S3
+    # s7 = curses.ACS_S7
+    # s9 = curses.ACS_S9
+    plus = curses.ACS_PLUS
+    ltee = curses.ACS_LTEE
+    rtee = curses.ACS_RTEE
+    btee = curses.ACS_BTEE
+    ttee = curses.ACS_TTEE
+
+    my, mx = stdscr.getmaxyx()
+
+    stdscr.clear()
+
+    # Draw the border
+    stdscr.border()
+
+    # Draw the table
+    # +----------------------------------+
+    # | Date | Nom     | Montant | Solde |
+    # |------|---------|---------|-------|
+    # |      |         |         |       |
+    # |----------------------------------|
+    # |                      |           |
+    #
+
+    # Main lines
+    stdscr.vline(1, 13, vline, my - 11)
+    stdscr.vline(1, mx - 25, vline, my - 11)
+    stdscr.vline(1, mx - 13, vline, my - 11)
+    stdscr.hline(2, 1, hline, mx - 2)
+    stdscr.hline(my - 10, 1, hline, mx - 2)
+    stdscr.hline(my - 3, 1, hline, mx - 2)
+
+    # Pretty things up
+    stdscr.addch(0, 13, ttee)
+    stdscr.addch(0,  mx - 25, ttee)
+    stdscr.addch(0, mx - 13, ttee)
+    stdscr.addch(2, 0, ltee)
+    stdscr.addch(2, 13, plus)
+    stdscr.addch(2, mx - 25, plus)
+    stdscr.addch(2, mx - 13, plus)
+    stdscr.addch(2, mx - 1, rtee)
+    stdscr.addch(my - 10, 0, ltee)
+    stdscr.addch(my - 10, 13, btee)
+    stdscr.addch(my - 10, mx - 25, btee)
+    stdscr.addch(my - 10, mx - 13, btee)
+    stdscr.addch(my - 10, mx - 1, rtee)
+    stdscr.addch(my - 3, 0, ltee)
+    stdscr.addch(my - 3, mx - 1, rtee)
+
+    # Add the text
+    stdscr.addstr(1, 4, 'Date')
+    stdscr.addstr(1, 17, 'Nom de l\'opération')
+    stdscr.addstr(1, mx - 22, 'Montant')
+    stdscr.addstr(1, mx - 9, 'Solde')
+    stdscr.addstr(my - 2, 1, '>')
+
+
+def printRecords(stdscr, var):
+    pos = 3
+    month = var['month']
+    loaded = var['loaded']
+    if loaded:
+        data = var['data'][month][0]
+        prevMonth, currMonth, sortedData = sortData(data)
+        current = prevMonth
+
+        for record in sortedData:
+            current += (1 - 2*record.nature) * record.amount
+            record.printOut(stdscr, pos, current)
+            pos += 1
+
+
+def getCommand(stdscr, var):
+    ch = ''
+    command = ''
+
+    while ch not in ['\n', '\x11']:
+        drawscreen(stdscr)
+        printRecords(stdscr, var)
+        my, mx = stdscr.getmaxyx()
+
+        if ch == 'KEY_BACKSPACE':
+            stdscr.addch(my - 2, 2 + len(command), ' ')
+            command = command[:-1]
+        elif ch in var['alphabet']:
+            command += ch
+
+        stdscr.addstr(my - 2, 3, command)
+        ch = stdscr.getkey()
+
+    if ch == '\x11':
+        var['stay'] = False
+
+    return command.split(' ')
+
+
+def test(stdscr, var):
+    chars = var['alphabet']
+    form = Form('Load Data')
+    year = Field('Select the Year')
+    form.addField(year)
+    form.fill(stdscr, chars)
+    month = Field('Select the Month')
+    form.addField(month)
+    form.fill(stdscr, chars)
+
+
 def main():
+
+    # Initialize the screen
+    stdscr = curses.initscr()
+    curses.noecho()
+    curses.raw()
+    curses.cbreak()
+    stdscr.keypad(True)
+
     var, strings, keyWords = init()
+    action = ''
+
+    # Load current month
+    loadYear(var)
+    var['loaded'] = True
 
     # The main loop
     while var['stay']:
-        command = input("\n> ").split(' ')
+
+        command = getCommand(stdscr, var)
+
+        # Get the input
         action = command.pop(0)
-        stdscr.refresh()
+
         if action in keyWords:
-            keyWords[action](var, strings, args=command)
+            keyWords[action](var, strings, stdscr, args=command)
+
+    # Clean up before exiting
+    curses.nocbreak()
+    stdscr.keypad(False)
+    curses.echo()
+    curses.endwin()
 
 
 # Start the program
