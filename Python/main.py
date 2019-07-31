@@ -1,16 +1,98 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+#
+# TODO: - Scroll for the records
+#       - Selection of records
+#       - Add languages ?
+#       - Implement Configuration
+#
+
 # Import necessary modules
 import os
 import decimal as dc
 import datetime
-import curses
-from Classes import Record, Form, Field
+import curses as crs
+
+# Import Classes
+from Record import Record
+from Form import Form
+from Field import Field
+
+# Import suggestion functions
+from Suggestions import addName, remName
+
+#
+# Basic functions
+#
+
+
+def isMoney(amount):
+    listAmount = amount.split('.')
+    b = 0 < len(listAmount) < 3
+    for string in listAmount:
+        b &= string.isnumeric()
+    return b
+
+#
+# Initialize variables
+#
 
 
 def init():
-    # Initialize variables
+
+    # Sgortens the ESC delay
+    os.environ.setdefault('ESCDELAY', '25')
+
+    # Initialize the screen
+    stdscr = crs.initscr()
+    crs.noecho()
+    crs.raw()
+    crs.cbreak()
+    crs.start_color()
+    stdscr.keypad(True)
+
+    # Set the color pairs
+    if os.environ['TERM'] == 'linux':
+        # If we are in a tty we can only use 8 colors
+        crs.COLOR_PAIRS = 8
+        crs.init_color(1, 1000,  336,  366)  # Red
+        crs.init_color(2,  336, 1000,  336)  # Green
+        crs.init_color(3,  336,  336, 1000)  # Blue
+        crs.init_color(4, 1000, 1000,  336)  # Yellow
+        crs.init_color(5,  336, 1000, 1000)  # Cyan
+        crs.init_color(6, 1000,  336, 1000)  # Magenta
+        crs.init_color(7,  664,  664,  664)  # Light Grey
+        crs.init_pair(1, 1, 0)
+        crs.init_pair(2, 2, 0)
+        crs.init_pair(3, 3, 0)
+        crs.init_pair(4, 4, 0)
+        crs.init_pair(5, 5, 0)
+        crs.init_pair(6, 6, 0)
+        crs.init_pair(7, 7, 0)
+    else:
+        crs.COLORS = 32
+        crs.COLOR_PAIRS = 32
+        # Start at 10 so the original colors are unchanged
+        crs.init_color(10,    0,    0,    0)  # Black
+        crs.init_color(11, 1000, 1000, 1000)  # White
+        crs.init_color(12, 1000,  336,  336)  # Red
+        crs.init_color(13,  336, 1000,  336)  # Green
+        crs.init_color(14,  336,  336, 1000)  # Blue
+        crs.init_color(15, 1000, 1000,  336)  # Yellow
+        crs.init_color(16,  336, 1000, 1000)  # Cyan
+        crs.init_color(17, 1000,  336, 1000)  # Magenta
+        crs.init_color(18,  336,  336,  366)  # Dark Grey
+        crs.init_color(19,  664,  664,  664)  # Light Grey
+        crs.init_pair(1,  12, 10)
+        crs.init_pair(2,  13, 10)
+        crs.init_pair(3,  14, 10)
+        crs.init_pair(4,  15, 10)
+        crs.init_pair(5,  16, 10)
+        crs.init_pair(6,  17, 10)
+        crs.init_pair(7,  18, 10)
+        crs.init_pair(8,  19, 10)
+
     cwd = os.getcwd()
     dc.getcontext().prec = 50
     now = datetime.datetime.now()
@@ -20,31 +102,15 @@ def init():
     months = ['01', '02', '03', '04', '05', '06',
               '07', '08', '09', '10', '11', '12']
 
-    strings = {
-        'changeKey': 'Enter the key you want to change',
-        'changeAmount': 'Change the amount of the operation : ',
-        'changeNature': 'Change the nature of the operation : ',
-        'changeName': 'Change the name of the operation : ',
-        'removeKey': 'Enter the key you want to remove, leave void to cancel',
-        'removeRecord': 'Record to remove :',
-        'selectName': 'Enter the name of the operation :',
-        'selectNat': 'Enter the nature, default is 1:\n0 : Credit\n1 : Debit',
-        'selectAmount': 'Enter the Amount of the operation : ',
-        'selectYear': 'Enter the requested year, default is : ',
-        'selectMonth': 'Enter the requested month, default is : ',
-        'selectLoad': 'Enter what you want to load, default is 0 :\n0 : Year'
-        + '\n1-12 : Month',
-            }
-
     keyWords = {
             'load': _load,
             'add': _add,
             'mod': _mod,
             'exit': _exit,
-            'show': _show,
             'save': _save,
             'rem': _rem,
             'debug': _debug,
+            # 'reload': _reload,
             # 'help': _help
             }
 
@@ -57,18 +123,29 @@ def init():
             'months': months,
             'loaded': False,
             'data': {},
+            'names': {},  # var['names']['Toto'] = frequency of 'Toto'
             'stay': True,
-            'alphabet': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k',
-                         'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-                         'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
-                         'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-                         'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2',
-                         '3', '4', '5', '6', '7', '8', '9', ' ', '-', '_', '.',
-                         ',',
-                         ],
+            'cursor': [0, 0],  # var['cursor'] = [cursor.x, cursor.y]
+            'alphabet': {'a': 'a', 'b': 'b', 'c': 'c', 'd': 'd', 'e': 'e',
+                         'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i', 'j': 'j',
+                         'k': 'k', 'l': 'l', 'm': 'm', 'n': 'n', 'o': 'o',
+                         'p': 'p', 'q': 'q', 'r': 'r', 's': 's', 't': 't',
+                         'u': 'u', 'v': 'v', 'w': 'w', 'x': 'x', 'y': 'y',
+                         'z': 'z', 'A': 'A', 'B': 'B', 'C': 'C', 'D': 'D',
+                         'E': 'E', 'F': 'F', 'G': 'G', 'H': 'H', 'I': 'I',
+                         'J': 'J', 'K': 'K', 'L': 'L', 'M': 'M', 'N': 'N',
+                         'O': 'O', 'P': 'P', 'Q': 'Q', 'R': 'R', 'S': 'S',
+                         'T': 'T', 'U': 'U', 'V': 'V', 'W': 'W', 'X': 'X',
+                         'Y': 'Y', 'Z': 'Z', '0': '0', '1': '1', '2': '2',
+                         '3': '3', '4': '4', '5': '5', '6': '6', '7': '7',
+                         '8': '8', '9': '9', ' ': ' ', '-': '-', '_': '_',
+                         '.': '.', ',': ',', '©': 'é', '¨': 'è',
+                         },
+            'chars': [crs.ACS_S9, crs.ACS_S7, crs.ACS_HLINE, crs.ACS_S3,
+                      crs.ACS_S1],
             }
 
-    return var, strings, keyWords
+    return stdscr, var, keyWords
 
 
 #
@@ -90,10 +167,14 @@ def openFile(fileName, year, cwd):
 
 # Read the file and return the data associated with it
 
-def readFile(file, month, year, created, cwd):
+def readFile(file, var, created):
+    cwd = var['cwd']
+    year = var['year']
+    month = var['month']
     data = {}
     data['prevMonth'] = findPrev(month, year, created, cwd)
     data['currMonth'] = data['prevMonth']
+    data['history'] = [data['currMonth']]*31
     for line in file:
         line = line.strip('\n')
         content = line.split(";")
@@ -105,6 +186,7 @@ def readFile(file, month, year, created, cwd):
             nature = int(nature)
             record = Record(key, date, name, amount, int(nature))
             record.add(data)
+            addName(name, var)
     file.close()
     return data
 
@@ -166,7 +248,7 @@ def sortData(data):
     # Transfom the data into a list
     listData = []
     for key in data:
-        if key not in ['prevMonth', 'currMonth']:
+        if key not in ['prevMonth', 'currMonth', 'history']:
             listData.append(data[key])
 
     sortedData = sorted(listData, key=lambda record: record.date[0])
@@ -192,7 +274,7 @@ def loadMonth(var):
     fileName = month + '_' + year + '.sav'
     file, filePath, created = openFile(fileName, year, cwd)
     if not created:
-        data = readFile(file, month, year, created, cwd)
+        data = readFile(file, var, created)
         file.close()
     # Look for older files for the previous amount if we created the file
     else:
@@ -202,6 +284,7 @@ def loadMonth(var):
         # value that is requested
         data['prevMonth'] = prevMonth
         data['currMonth'] = prevMonth
+        data['history'] = [prevMonth]*31
         file.write(str(prevMonth) + ';' + str(prevMonth))
         file.close()
     var['data'][month] = [data, filePath, created]
@@ -227,19 +310,18 @@ def loadYear(var):
 # Functions for the main loop
 #
 
-# Load a Year or a month
+# Load a Year or a Month
 
-def _load(var, strings, stdscr, args=[]):
-    orYear = var['orYear']
-    orMonth = var['orMonth']
+def _load(var, stdscr, args=[]):
+    month = var['month']
     year = var['year']
     loaded = var['loaded']
 
     # Create and fill the Form
-    yearF = Field('Selectionner l\'année', content=str(orYear))
-    monthF = Field('Selectionner le mois', content=str(orMonth))
-    loadForm = Form('Load Data', items=[yearF, monthF])
-    loadForm.fill(stdscr, var['alphabet'])
+    yearF = Field('Selectionner l\'année', content=str(year))
+    monthF = Field('Selectionner le mois', content=str(month))
+    loadForm = Form('Load Data', var, [yearF, monthF])
+    loadForm.fill(stdscr, var)
 
     # Retrieve Form data
     aYear, aMonth = loadForm.retrieve()
@@ -251,121 +333,120 @@ def _load(var, strings, stdscr, args=[]):
         if (year != aYear or not loaded) and aYear.isnumeric():
             year = aYear
             var['year'] = year
+            var['month'] = month
             var['loaded'] = True
+            var['names'] = {}
             loadYear(var)
         elif loaded:
             var['month'] = month
             loadMonth(var)
 
 
-def _add(var, strings, stdscr, args=[]):
+# Add a new Record
+
+def _add(var, stdscr, args=[]):
     month = var['month']
     year = var['year']
     data = var['data'][month][0]
 
     # Create and fill the Form
     dayF = Field('Jour de l\'opération')
-    nameF = Field('Nom de l\'opération')
+    nameF = Field('Nom de l\'opération', suggestions='names')
     natF = Field('c -> Crédit, d -> Débit', content='d')
     amountF = Field('Montant de l\'opération')
-    addForm = Form('Add Record', items=[dayF, nameF, natF, amountF])
-    addForm.fill(stdscr, var['alphabet'])
+    addForm = Form('Add Record', var, [dayF, nameF, natF, amountF])
+    addForm.fill(stdscr, var)
 
     # Retrieve Form data
     aDay, aName, aNat, aAmount = addForm.retrieve()
-    if aDay.isnumeric():
+    if aDay.isnumeric() and aNat in ['d', 'c'] and isMoney(aAmount):
         aDay = str("%02d" % int(aDay))
         date = [aDay, month, year]
-        if aNat in ['d', 'c']:
-            aNat = (aNat == 'd')*1
-            aAmount = dc.Decimal(aAmount)
-            key = createKey(data)
-            record = Record(key, date, aName, aAmount, aNat)
-            record.add(data)
-            var['data'][month][0] = data
-            _save(var, strings, stdscr)
+        aNat = (aNat == 'd')*1
+        aAmount = dc.Decimal(aAmount)
+        key = createKey(data)
+        record = Record(key, date, aName, aAmount, aNat)
+        record.add(data)
+        addName(aName, var)
+        var['data'][month][0] = data
+        _save(var, stdscr)
 
 
-def _mod(var, strings, args=[]):
+# Change an existing Record
+
+def _mod(var, stdscr, args=[]):
     month = var['month']
     year = var['year']
     data = var['data'][month][0]
-    print("Month selected : " + month + '/' + year)
-    _show(var, strings, situation=False, key=True)
-    key = input(strings['changeKey'] + "\n> ")
-    if key.isnumeric():
-        key = int(key)
-        if key in data:
-            record = data[key]
-            day = input("Change the day : " + record.date[0] + "\n")
-            print()
-            if day.isnumeric() and int(day) in range(1, 32):
-                day = "%02d" % int(day)
-                record.date[0] = day
-            print("Date selected : " + '/'.join(record.date))
-            name = input(strings['changeName'] + record.name + "\n> ")
-            if name:
-                record.name = name
-            nature = input(strings['changeNature'] + str(record.nature)
-                           + "\n0 : Credit\n1 : Debit\n> ")
-            if nature:
-                record.nature = int(nature)
-            amount = input(strings['changeAmount'] + str(record.amount)
-                           + "\n> ")
-            if amount:
-                record.amount = dc.Decimal(amount)
+
+    # Draw Screen with the keys
+    drawscreen(stdscr, var, True)
+
+    # Create Form to select item to be removed
+    keyF = Field('Clé de l\'item à changer')
+    selForm = Form('Choose Record', var, [keyF])
+    selForm.fill(stdscr, var)
+    key = selForm.retrieve()[0]
+
+    if key.isnumeric() and int(key) in data:
+        rc = data[int(key)]
+        remName(rc.name, var)
+        # Create and fill the Form
+        dayF = Field('Jour de l\'opération', str(rc.day + 1))
+        nameF = Field('Nom de l\'opération', rc.name, 'names')
+        natF = Field('c -> Crédit, d -> Débit', 'd' if rc.nature else 'c')
+        amountF = Field('Montant de l\'opération', str(rc.amount))
+        modForm = Form('Change Record', var, [dayF, nameF, natF, amountF])
+        modForm.fill(stdscr, var)
+
+        # Retrieve Form data
+        mDay, mName, mNat, mAmount = modForm.retrieve()
+        if mDay.isnumeric() and mNat in ['d', 'c'] and isMoney(mAmount):
+            mDay = str("%02d" % int(mDay))
+            date = [mDay, month, year]
+            mNat = (mNat == 'd')*1
+            mAmount = dc.Decimal(mAmount)
+            record = Record(int(key), date, mName, mAmount, mNat)
             record.mod(data)
+            addName(mName, var)
             var['data'][month][0] = data
-            _save(var, strings)
-        else:
-            print("Invalid key")
+            _save(var, stdscr)
 
 
-def _rem(var, strings, args=[]):
+# Remove an existing Record
+
+def _rem(var, stdscr, args=[]):
     month = var['month']
-    year = var['year']
     data = var['data'][month][0]
-    print("Month selected : " + month + '/' + year)
-    _show(var, strings, situation=False, key=True)
-    key = input(strings['removeKey'] + "\n> ")
-    if key.isnumeric():
-        key = int(key)
-        if key in data:
-            record = data[key]
-            print(strings['removeRecord'])
-            record.show()
-            record.rem(data)
-            var['data'][month][0] = data
-            _save(var, strings)
-        else:
-            print("Invalid key")
+
+    # Draw Screen with the keys
+    drawscreen(stdscr, var, True)
+
+    # Create Form to select item to be removed
+    keyF = Field('Clé de l\'item à changer')
+    selForm = Form('Choose Record', var, [keyF])
+    selForm.fill(stdscr, var)
+    key = selForm.retrieve()[0]
+
+    if key.isnumeric() and int(key) in data:
+        record = data[int(key)]
+        record.rem(data)
+        remName(record.name, var)
 
 
-def _save(var, strings, stdscr, args=[]):
+# Save the current Month
+
+def _save(var, stdscr, args=[]):
     month = var['month']
     loaded = var['loaded']
     if loaded:
-        (data, path, created) = var['data'][month]
+        (data, path, _) = var['data'][month]
         closeFile(path, data)
 
 
-def _show(var, strings, args=[], situation=True, key=False):
-    month = var['month']
-    loaded = var['loaded']
-    if loaded:
-        data = var['data'][month][0]
-        prevMonth, currMonth, sortedData = sortData(data)
-        if situation:
-            print('Previous month amount : ' + str(prevMonth))
-            print('Current month amount : ' + str(currMonth))
-            print()
-        for record in sortedData:
-            record.show(key=key)
-    else:
-        print("\nNo file loaded")
+# Exit the main loop
 
-
-def _exit(var, strings, stdscr, args=[]):
+def _exit(var, stdscr, args=[]):
     if var['loaded']:
         months = var['months']
         data = var['data']
@@ -376,104 +457,192 @@ def _exit(var, strings, stdscr, args=[]):
     var['stay'] = False
 
 
-def _debug(var, strings, args=[]):
+def _reload(var, stdscr, args=[]):
+    _exit(var, stdscr, args=[])
+
+    main()
+
+
+def _debug(var, stdscr, args=[]):
     print(var)
 
 
-def drawscreen(stdscr):
-    vline = curses.ACS_VLINE
-    hline = curses.ACS_HLINE
-    # s1 = curses.ACS_S1
-    # s3 = curses.ACS_S3
-    # s7 = curses.ACS_S7
-    # s9 = curses.ACS_S9
-    plus = curses.ACS_PLUS
-    ltee = curses.ACS_LTEE
-    rtee = curses.ACS_RTEE
-    btee = curses.ACS_BTEE
-    ttee = curses.ACS_TTEE
+# Draw the GUI
+
+def drawscreen(stdscr, var, key=False):
 
     my, mx = stdscr.getmaxyx()
 
-    stdscr.clear()
+    # Do not draw if the screen is too small
+    if my > 19 and mx > 63:
 
-    # Draw the border
-    stdscr.border()
+        vline = crs.ACS_VLINE
+        hline = crs.ACS_HLINE
+        plus = crs.ACS_PLUS
+        ltee = crs.ACS_LTEE
+        rtee = crs.ACS_RTEE
+        btee = crs.ACS_BTEE
+        ttee = crs.ACS_TTEE
 
-    # Draw the table
-    # +----------------------------------+
-    # | Date | Nom     | Montant | Solde |
-    # |------|---------|---------|-------|
-    # |      |         |         |       |
-    # |----------------------------------|
-    # |                      |           |
-    #
+        month = var['month']
+        year = var['year']
 
-    # Main lines
-    stdscr.vline(1, 13, vline, my - 11)
-    stdscr.vline(1, mx - 25, vline, my - 11)
-    stdscr.vline(1, mx - 13, vline, my - 11)
-    stdscr.hline(2, 1, hline, mx - 2)
-    stdscr.hline(my - 10, 1, hline, mx - 2)
-    stdscr.hline(my - 3, 1, hline, mx - 2)
+        stdscr.clear()
 
-    # Pretty things up
-    stdscr.addch(0, 13, ttee)
-    stdscr.addch(0,  mx - 25, ttee)
-    stdscr.addch(0, mx - 13, ttee)
-    stdscr.addch(2, 0, ltee)
-    stdscr.addch(2, 13, plus)
-    stdscr.addch(2, mx - 25, plus)
-    stdscr.addch(2, mx - 13, plus)
-    stdscr.addch(2, mx - 1, rtee)
-    stdscr.addch(my - 10, 0, ltee)
-    stdscr.addch(my - 10, 13, btee)
-    stdscr.addch(my - 10, mx - 25, btee)
-    stdscr.addch(my - 10, mx - 13, btee)
-    stdscr.addch(my - 10, mx - 1, rtee)
-    stdscr.addch(my - 3, 0, ltee)
-    stdscr.addch(my - 3, mx - 1, rtee)
+        # Draw the border
+        stdscr.border()
 
-    # Add the text
-    stdscr.addstr(1, 4, 'Date')
-    stdscr.addstr(1, 17, 'Nom de l\'opération')
-    stdscr.addstr(1, mx - 22, 'Montant')
-    stdscr.addstr(1, mx - 9, 'Solde')
-    stdscr.addstr(my - 2, 1, '>')
+        # Draw the table
+        # +----------------------------------+
+        # | Date | Nom     | Montant | Solde |
+        # |------|---------|---------|-------|
+        # |      |         |         |       |
+        # |----------------------------------|
+        # |                      |           |
+        #
+
+        # Main lines
+        stdscr.vline(1, 13, vline, my - 11)
+        stdscr.vline(1, mx - 25, vline, my - 11)
+        stdscr.vline(1, mx - 13, vline, my - 11)
+        if key:
+            stdscr.vline(1, 19, vline, my - 11)
+        stdscr.vline(my - 10, mx - 30, vline, 8)
+        stdscr.hline(2, 1, hline, mx - 2)
+        stdscr.hline(my - 10, 1, hline, mx - 2)
+        stdscr.hline(my - 3, 1, hline, mx - 2)
+
+        # Pretty things up
+        stdscr.addch(0, 13, ttee)
+        stdscr.addch(0,  mx - 25, ttee)
+        stdscr.addch(0, mx - 13, ttee)
+        stdscr.addch(2, 0, ltee)
+        stdscr.addch(2, 13, plus)
+        stdscr.addch(2, mx - 25, plus)
+        stdscr.addch(2, mx - 13, plus)
+        stdscr.addch(2, mx - 1, rtee)
+        stdscr.addch(my - 10, 0, ltee)
+        stdscr.addch(my - 10, 13, btee)
+        stdscr.addch(my - 10, mx - 25, btee)
+        stdscr.addch(my - 10, mx - 13, btee)
+        stdscr.addch(my - 10, mx - 1, rtee)
+        stdscr.addch(my - 3, 0, ltee)
+        stdscr.addch(my - 3, mx - 1, rtee)
+        stdscr.addch(my - 10, mx - 30, ttee)
+        stdscr.addch(my - 3, mx - 30, btee)
+        if key:
+            stdscr.addch(0, 19, ttee)
+            stdscr.addch(2, 19, plus)
+            stdscr.addch(my - 10, 19, btee)
+
+        # Add the text
+        stdscr.addstr(1, 4, 'Date')
+        stdscr.addstr(1, 17 + 6 * key, 'Nom de l\'opération')
+        stdscr.addstr(1, mx - 22, 'Montant')
+        stdscr.addstr(1, mx - 9, 'Solde')
+        if key:
+            stdscr.addstr(1, 15, 'Clé')
+        stdscr.addstr(my - 9, mx - 19, month + '/' + year)
+        stdscr.addstr(my - 7, mx - 28, 'Solde précédent:')
+        stdscr.addstr(my - 6, mx - 28, 'Solde actuel:')
+        stdscr.addstr(my - 2, 1, '>')
+
+        printRecords(stdscr, var, key)
+        #drawGraph(stdscr, var)
 
 
-def printRecords(stdscr, var):
+# Print the records for the selected month
+
+def printRecords(stdscr, var, key=False):
     pos = 3
+    my, mx = stdscr.getmaxyx()
     month = var['month']
     loaded = var['loaded']
     if loaded:
         data = var['data'][month][0]
-        prevMonth, currMonth, sortedData = sortData(data)
+        prevMonth, _, sortedData = sortData(data)
         current = prevMonth
 
         for record in sortedData:
             current += (1 - 2*record.nature) * record.amount
-            record.printOut(stdscr, pos, current)
+            record.printOut(stdscr, pos, current, key)
             pos += 1
 
+        stdscr.addstr(my - 7, mx - 11, str(prevMonth), crs.color_pair(3))
+        if prevMonth > current:
+            stdscr.addstr(my - 6, mx - 11, str(current), crs.color_pair(1))
+        else:
+            stdscr.addstr(my - 6, mx - 11, str(current), crs.color_pair(2))
 
-def getCommand(stdscr, var):
+
+# Draw the graph for the current Month
+
+def drawGraph(stdscr, var):
+    month = var['month']
+    loaded = var['loaded']
+    my, mx = stdscr.getmaxyx()
+    chars = var['chars']
+    if loaded:
+        data = var['data'][month][0]
+        history = data['history']
+        solMax, solMin = max(history), min(history)
+        delSol = solMax - solMin
+        if not delSol:
+            delSol = 20
+        # Vertical position of the line
+        pos = [int((29 * (sol - solMin)) / delSol) for sol in history]
+        date = [int((30 * x) / (mx - 32)) for x in range(1, mx - 30)]
+        ticks = [date.index(5*i - 1) for i in range(1, 7)]
+
+        for x in range(1, mx - 30):
+            d = max(date[x - 1], 0)  # date[0] can be -1
+            d = min(d, 30)  # In case d = 31 which throws IndexError
+            ch = chars[pos[d] % 5]
+            y = my - 4 - (pos[d] // 5)
+            stdscr.addch(y, x, ch, crs.color_pair(4))
+        for x in ticks:
+            stdscr.addch(my - 3, x + 1, crs.ACS_BTEE)
+
+
+# Retrieve the entered command
+
+def getCommand(stdscr, var, com=''):
     ch = ''
-    command = ''
+    command = com
+    cx = len(command)
+
+    drawscreen(stdscr, var)
+    y, x = stdscr.getmaxyx()
 
     while ch not in ['\n', '\x11']:
-        drawscreen(stdscr)
-        printRecords(stdscr, var)
         my, mx = stdscr.getmaxyx()
 
-        if ch == 'KEY_BACKSPACE':
-            stdscr.addch(my - 2, 2 + len(command), ' ')
-            command = command[:-1]
-        elif ch in var['alphabet']:
-            command += ch
+        if mx > 63 and my > 19:
+            if ch == 'KEY_BACKSPACE' and cx:
+                command = command[:cx - 1] + command[cx:]
+                cx -= 1
+            elif ch == 'KEY_LEFT':
+                if cx:
+                    cx -= 1
+            elif ch == 'KEY_RIGHT':
+                if len(command) - cx:
+                    cx += 1
+            elif ch == '\x1b':
+                command = ''
+                cx = 0
+            elif ch in var['alphabet']:
+                command = command[:cx] + var['alphabet'][ch] + command[cx:]
+                cx += 1
 
-        stdscr.addstr(my - 2, 3, command)
+        stdscr.addstr(my - 2, 3, ' '*(mx - 5))
+        stdscr.addstr(my - 2, 3, command[-(mx - 5):])
+        stdscr.move(my - 2, 3 + cx)
+
         ch = stdscr.getkey()
+
+        if (my, mx) != (y, x):
+            drawscreen(stdscr, var)
+            y, x = my, mx
 
     if ch == '\x11':
         var['stay'] = False
@@ -481,28 +650,13 @@ def getCommand(stdscr, var):
     return command.split(' ')
 
 
-def test(stdscr, var):
-    chars = var['alphabet']
-    form = Form('Load Data')
-    year = Field('Select the Year')
-    form.addField(year)
-    form.fill(stdscr, chars)
-    month = Field('Select the Month')
-    form.addField(month)
-    form.fill(stdscr, chars)
-
+# The main loop
 
 def main():
 
-    # Initialize the screen
-    stdscr = curses.initscr()
-    curses.noecho()
-    curses.raw()
-    curses.cbreak()
-    stdscr.keypad(True)
-
-    var, strings, keyWords = init()
+    stdscr, var, keyWords = init()
     action = ''
+    command = ['']
 
     # Load current month
     loadYear(var)
@@ -511,19 +665,20 @@ def main():
     # The main loop
     while var['stay']:
 
-        command = getCommand(stdscr, var)
-
         # Get the input
         action = command.pop(0)
 
         if action in keyWords:
-            keyWords[action](var, strings, stdscr, args=command)
+            keyWords[action](var, stdscr, args=command)
+            command = getCommand(stdscr, var, action)
+        else:
+            command = getCommand(stdscr, var)
 
     # Clean up before exiting
-    curses.nocbreak()
+    crs.nocbreak()
     stdscr.keypad(False)
-    curses.echo()
-    curses.endwin()
+    crs.echo()
+    crs.endwin()
 
 
 # Start the program
