@@ -125,6 +125,7 @@ def init():
             'data': {},
             'names': {},  # var['names']['Toto'] = frequency of 'Toto'
             'stay': True,
+            'cancelled': False,
             'cursor': [0, 0],  # var['cursor'] = [cursor.x, cursor.y]
             'alphabet': {'a': 'a', 'b': 'b', 'c': 'c', 'd': 'd', 'e': 'e',
                          'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i', 'j': 'j',
@@ -324,22 +325,26 @@ def _load(var, stdscr, args=[]):
     loadForm.fill(stdscr, var)
 
     # Retrieve Form data
-    aYear, aMonth = loadForm.retrieve()
-    aYear = aYear.strip()
-    aMonth = aMonth.strip()
+    if loadForm.cancelled:
+        var['cancelled'] = True
+    else:
+        var['cancelled'] = True
+        aYear, aMonth = loadForm.retrieve()
+        aYear = aYear.strip()
+        aMonth = aMonth.strip()
 
-    if aMonth.isnumeric() and int(aMonth) in range(1, 13):
-        month = "%02d" % int(aMonth)
-        if (year != aYear or not loaded) and aYear.isnumeric():
-            year = aYear
-            var['year'] = year
-            var['month'] = month
-            var['loaded'] = True
-            var['names'] = {}
-            loadYear(var)
-        elif loaded:
-            var['month'] = month
-            loadMonth(var)
+        if aMonth.isnumeric() and int(aMonth) in range(1, 13):
+            month = "%02d" % int(aMonth)
+            if (year != aYear or not loaded) and aYear.isnumeric():
+                year = aYear
+                var['year'] = year
+                var['month'] = month
+                var['loaded'] = True
+                var['names'] = {}
+                loadYear(var)
+            elif loaded:
+                var['month'] = month
+                loadMonth(var)
 
 
 # Add a new Record
@@ -358,18 +363,21 @@ def _add(var, stdscr, args=[]):
     addForm.fill(stdscr, var)
 
     # Retrieve Form data
-    aDay, aName, aNat, aAmount = addForm.retrieve()
-    if aDay.isnumeric() and aNat in ['d', 'c'] and isMoney(aAmount):
-        aDay = str("%02d" % int(aDay))
-        date = [aDay, month, year]
-        aNat = (aNat == 'd')*1
-        aAmount = dc.Decimal(aAmount)
-        key = createKey(data)
-        record = Record(key, date, aName, aAmount, aNat)
-        record.add(data)
-        addName(aName, var)
-        var['data'][month][0] = data
-        _save(var, stdscr)
+    if addForm.cancelled:
+        var['cancelled'] = True
+    else:
+        aDay, aName, aNat, aAmount = addForm.retrieve()
+        if aDay.isnumeric() and aNat in ['d', 'c'] and isMoney(aAmount):
+            aDay = str("%02d" % int(aDay))
+            date = [aDay, month, year]
+            aNat = (aNat == 'd')*1
+            aAmount = dc.Decimal(aAmount)
+            key = createKey(data)
+            record = Record(key, date, aName, aAmount, aNat)
+            record.add(data)
+            addName(aName, var)
+            var['data'][month][0] = data
+            _save(var, stdscr)
 
 
 # Change an existing Record
@@ -386,31 +394,37 @@ def _mod(var, stdscr, args=[]):
     keyF = Field('Clé de l\'item à changer')
     selForm = Form('Choose Record', var, [keyF])
     selForm.fill(stdscr, var)
-    key = selForm.retrieve()[0]
+    if selForm.cancelled:
+        var['cancelled'] = True
+    else:
+        key = selForm.retrieve()[0]
 
-    if key.isnumeric() and int(key) in data:
-        rc = data[int(key)]
-        remName(rc.name, var)
-        # Create and fill the Form
-        dayF = Field('Jour de l\'opération', str(rc.day + 1))
-        nameF = Field('Nom de l\'opération', rc.name, 'names')
-        natF = Field('c -> Crédit, d -> Débit', 'd' if rc.nature else 'c')
-        amountF = Field('Montant de l\'opération', str(rc.amount))
-        modForm = Form('Change Record', var, [dayF, nameF, natF, amountF])
-        modForm.fill(stdscr, var)
+        if key.isnumeric() and int(key) in data:
+            rc = data[int(key)]
+            remName(rc.name, var)
+            # Create and fill the Form
+            dayF = Field('Jour de l\'opération', str(rc.day + 1))
+            nameF = Field('Nom de l\'opération', rc.name, 'names')
+            natF = Field('c -> Crédit, d -> Débit', 'd' if rc.nature else 'c')
+            amountF = Field('Montant de l\'opération', str(rc.amount))
+            modForm = Form('Change Record', var, [dayF, nameF, natF, amountF])
+            modForm.fill(stdscr, var)
 
-        # Retrieve Form data
-        mDay, mName, mNat, mAmount = modForm.retrieve()
-        if mDay.isnumeric() and mNat in ['d', 'c'] and isMoney(mAmount):
-            mDay = str("%02d" % int(mDay))
-            date = [mDay, month, year]
-            mNat = (mNat == 'd')*1
-            mAmount = dc.Decimal(mAmount)
-            record = Record(int(key), date, mName, mAmount, mNat)
-            record.mod(data)
-            addName(mName, var)
-            var['data'][month][0] = data
-            _save(var, stdscr)
+            # Retrieve Form data
+            if modForm.cancelled:
+                var['cancelled'] = True
+            else:
+                mDay, mName, mNat, mAmount = modForm.retrieve()
+                if mDay.isnumeric() and mNat in ['d', 'c'] and isMoney(mAmount):
+                    mDay = str("%02d" % int(mDay))
+                    date = [mDay, month, year]
+                    mNat = (mNat == 'd')*1
+                    mAmount = dc.Decimal(mAmount)
+                    record = Record(int(key), date, mName, mAmount, mNat)
+                    record.mod(data)
+                    addName(mName, var)
+                    var['data'][month][0] = data
+                    _save(var, stdscr)
 
 
 # Remove an existing Record
@@ -426,12 +440,16 @@ def _rem(var, stdscr, args=[]):
     keyF = Field('Clé de l\'item à changer')
     selForm = Form('Choose Record', var, [keyF])
     selForm.fill(stdscr, var)
-    key = selForm.retrieve()[0]
 
-    if key.isnumeric() and int(key) in data:
-        record = data[int(key)]
-        record.rem(data)
-        remName(record.name, var)
+    if selForm.cancelled:
+        var['cancelled'] = True
+    else:
+        key = selForm.retrieve()[0]
+
+        if key.isnumeric() and int(key) in data:
+            record = data[int(key)]
+            record.rem(data)
+            remName(record.name, var)
 
 
 # Save the current Month
@@ -664,15 +682,17 @@ def main():
 
     # The main loop
     while var['stay']:
+        var['cancelled'] = False
 
         # Get the input
         action = command.pop(0)
 
         if action in keyWords:
-            keyWords[action](var, stdscr, args=command)
-            command = getCommand(stdscr, var, action)
-        else:
-            command = getCommand(stdscr, var)
+            while not var['cancelled'] and var['stay']:
+                keyWords[action](var, stdscr, args=command)
+                drawscreen(stdscr, var)
+
+        command = getCommand(stdscr, var)
 
     # Clean up before exiting
     crs.nocbreak()
