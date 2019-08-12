@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#
-# TODO: - Scroll for the records
-#       - Selection of records
-#       - Add languages ?
-#       - Implement Configuration
-#
-
 # Import necessary modules
 import os
 import decimal as dc
@@ -16,7 +9,7 @@ import curses as crs
 
 # Import Classes
 from Record import Record
-from Form import Form
+from Form_old import Form
 from Field import Field
 
 # Import suggestion functions
@@ -41,7 +34,7 @@ def isMoney(amount):
 
 def init():
 
-    # Sgortens the ESC delay
+    # Shortens the ESC delay
     os.environ.setdefault('ESCDELAY', '25')
 
     # Initialize the screen
@@ -56,6 +49,7 @@ def init():
     if os.environ['TERM'] == 'linux':
         # If we are in a tty we can only use 8 colors
         crs.COLOR_PAIRS = 8
+        crs.init_color(0,    0,    0,    0)  # Black
         crs.init_color(1, 1000,  336,  366)  # Red
         crs.init_color(2,  336, 1000,  336)  # Green
         crs.init_color(3,  336,  336, 1000)  # Blue
@@ -73,25 +67,25 @@ def init():
     else:
         crs.COLORS = 32
         crs.COLOR_PAIRS = 32
-        # Start at 10 so the original colors are unchanged
-        crs.init_color(10,    0,    0,    0)  # Black
-        crs.init_color(11, 1000, 1000, 1000)  # White
-        crs.init_color(12, 1000,  336,  336)  # Red
-        crs.init_color(13,  336, 1000,  336)  # Green
-        crs.init_color(14,  336,  336, 1000)  # Blue
-        crs.init_color(15, 1000, 1000,  336)  # Yellow
-        crs.init_color(16,  336, 1000, 1000)  # Cyan
-        crs.init_color(17, 1000,  336, 1000)  # Magenta
-        crs.init_color(18,  336,  336,  366)  # Dark Grey
-        crs.init_color(19,  664,  664,  664)  # Light Grey
-        crs.init_pair(1,  12, 10)
-        crs.init_pair(2,  13, 10)
-        crs.init_pair(3,  14, 10)
-        crs.init_pair(4,  15, 10)
-        crs.init_pair(5,  16, 10)
-        crs.init_pair(6,  17, 10)
-        crs.init_pair(7,  18, 10)
-        crs.init_pair(8,  19, 10)
+        # Start at 20 so the original colors are unchanged
+        crs.init_color(20,    0,    0,    0)  # Black
+        crs.init_color(21, 1000, 1000, 1000)  # White
+        crs.init_color(22, 1000,  336,  336)  # Red
+        crs.init_color(23,  336, 1000,  336)  # Green
+        crs.init_color(24,  336,  336, 1000)  # Blue
+        crs.init_color(25, 1000, 1000,  336)  # Yellow
+        crs.init_color(26,  336, 1000, 1000)  # Cyan
+        crs.init_color(27, 1000,  336, 1000)  # Magenta
+        crs.init_color(28,  336,  336,  366)  # Dark Grey
+        crs.init_color(29,  664,  664,  664)  # Light Grey
+        crs.init_pair(1,  22, 20)
+        crs.init_pair(2,  23, 20)
+        crs.init_pair(3,  24, 20)
+        crs.init_pair(4,  25, 20)
+        crs.init_pair(5,  26, 20)
+        crs.init_pair(6,  27, 20)
+        crs.init_pair(7,  28, 20)
+        crs.init_pair(8,  29, 20)
 
     cwd = os.getcwd()
     dc.getcontext().prec = 50
@@ -415,7 +409,7 @@ def _mod(var, stdscr, args=[]):
                 var['cancelled'] = True
             else:
                 mDay, mName, mNat, mAmount = modForm.retrieve()
-                if mDay.isnumeric() and mNat in ['d', 'c'] and isMoney(mAmount):
+                if mDay.isdigit() and mNat in ['d', 'c'] and isMoney(mAmount):
                     mDay = str("%02d" % int(mDay))
                     date = [mDay, month, year]
                     mNat = (mNat == 'd')*1
@@ -566,7 +560,7 @@ def drawscreen(stdscr, var, key=False):
         stdscr.addstr(my - 2, 1, '>')
 
         printRecords(stdscr, var, key)
-        #drawGraph(stdscr, var)
+        # drawGraph(stdscr, var)
 
 
 # Print the records for the selected month
@@ -684,6 +678,8 @@ def main():
     while var['stay']:
         var['cancelled'] = False
 
+        command = getCommand(stdscr, var)
+
         # Get the input
         action = command.pop(0)
 
@@ -691,8 +687,6 @@ def main():
             while not var['cancelled'] and var['stay']:
                 keyWords[action](var, stdscr, args=command)
                 drawscreen(stdscr, var)
-
-        command = getCommand(stdscr, var)
 
     # Clean up before exiting
     crs.nocbreak()
