@@ -79,7 +79,7 @@ class Record:
         return am
 
     def printOut(self, stdscr, pos, current, key=False):
-        my, mx = stdscr.getmaxyx()
+        _, mx = stdscr.getmaxyx()
         amount = self.calcAmount()
         cle = str(self.key)
         current = ('%7.2f' % current).strip()
