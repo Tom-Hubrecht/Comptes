@@ -1,125 +1,147 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Import necessary modules
+# Import curses module
 import curses as crs
 
-# Import Field class
-from Field import Field
+# Import fields classes
+from Fields import Carousel, Datefield, Textfield
 
 
 class Form:
 
-    def __init__(self, title, var={}, items=[]):
+    def __init__(self, title):
         self.title = title
         self.items = []
         self.length = 0
-        self.width = 48
+        self.width = max(48, len(title) + 4)
         self.cursor = 0
         self.filled = False
         self.cancelled = False
         self.win = crs.newwin(5, 48)
-        for item in items:
-            if type(item) is Field:
-                self.addField(item, var)
 
-    def _update(self, var={}):
+    def _update(self):
         self.win.resize(self.length + 4, self.width)
         self.win.clear()
         self.win.border()
-        self.win.addstr(self.length + 2, self.width - 4, 'Ok')
-        self._printTitle()
+        self._draw_title()
+        self._draw_items()
+
+    def _draw_title(self):
+        self.win.addch(0, 1, crs.ACS_RTEE)
+        self.win.addch(0, 2 + len(self.title), crs.ACS_LTEE)
+        self.win.addstr(0, 2, self.title)
+
+    def _draw_items(self):
         pos = 0
-        for item in self.items:
-            if type(item) is Field:
-                text, suggestion = item.printOut(self.width - 4, var)
-                self.win.addstr(pos + 2, 2, text)
-                self.win.addstr(pos + 2, 2 + len(text), suggestion,
-                                crs.color_pair(4))
+        for field in self.items:
+            self.win.addstr(pos + 2, 3, field.get_str())
             pos += 1
 
-    def addButton(self, button, var={}):
-        self.items += [button]
-        self.length += 1
-        self._update(var)
-
-    def addField(self, field, var={}):
-        self.items += [field]
-        # Guarantee at least 10 chars for the answer
-        self.width = max(self.width, field.textLen() + 17)
-        self.length += 1
-        self._update(var)
-
-    def changeTitle(self, newTitle):
-        self.title = newTitle
+    def _draw_cursor(self, stdscr):
+        my, mx = stdscr.getmaxyx()
+        px, py = (mx - 48) // 2, (my - (self.length + 4)) // 2
+        pc_y = 2 + py + self.cursor
+        pc_x = 3 + px + self.items[self.cursor].cursor_pos()
+        stdscr.move(pc_y, pc_x)
 
     def _display(self, stdscr):
         my, mx = stdscr.getmaxyx()
         px, py = (mx - 48) // 2, (my - (self.length + 4)) // 2
         self.win.mvwin(py, px)
         self.win.overwrite(stdscr)
-        self._printCursor(stdscr)
+        self._draw_cursor(stdscr)
 
-    def _moveCursor(self, var={}, auto=False, val=1):
-        if self.length - self.cursor and auto:
-            self.items[self.cursor].autoFill(var)
-        self.cursor += val
-        self.cursor %= self.length + 1
+    def _resize(self, n):
+        self.width = n + 4
+        for field in self.items:
+            if field.nature == "text":
+                field.new_width(n)
 
-    def _printCursor(self, stdscr):
-        my, mx = stdscr.getmaxyx()
-        px, py = (mx - 48) // 2, (my - (self.length + 4)) // 2
-        pc = self.cursor
-        if pc == self.length:
-            stdscr.move(py + pc + 2, px + self.width - 2)
+    def _move_cursor(self, d):
+        # 0: Down, 1: Up, 2: Left, 3: Right
+        if d == 0 and self.cursor < (self.length - 1):
+            self.cursor += 1
+        elif d == 1 and self.cursor > 0:
+            self.cursor -= 1
+        elif d == 2:
+            self.items[self.cursor].move_left()
+        elif d == 3:
+            self.items[self.cursor].move_right()
+
+    def add_carousel(self, text, items):
+        car = Carousel(text, items)
+        if car.req_width() > self.width - 4:
+            self._resize(car.req_width())
+
+        self.items.append(car)
+        self.length += 1
+        self._update()
+
+    def add_date(self, text, date):
+        dat = Datefield(text, date)
+        if dat.req_width() > self.width - 4:
+            self._resize(dat.req_width())
+
+        self.items.append(dat)
+        self.length += 1
+        self._update()
+
+    def add_text(self, text, content='', suggestions=''):
+        tex = Textfield(text, content, suggestions)
+        if tex.req_width() > self.width - 4:
+            self._resize(tex.req_width)
         else:
-            length = self.items[pc].cursorPos(self.width - 4)
-            stdscr.move(py + pc + 2, px + length + 2)
+            tex.new_width(self.width - 4)
 
-    def _printTitle(self):
-        st = 25 - (len(self.title) // 2)
-        en = st + len(self.title)
-        self.win.addch(0, st - 1, crs.ACS_RTEE)
-        self.win.addch(0, en, crs.ACS_LTEE)
-        self.win.addstr(0, st, self.title)
+        self.items.append(tex)
+        self.length += 1
+        self._update()
 
-    def fill(self, stdscr, var={}):
+    def fill(self, stdscr):
         self.filled = False
-        self.cursor = 0
-        ch = ''
-        chars = var['alphabet']
+        ch = ""
+
         self._display(stdscr)
-        while not self.filled:
-            ch = stdscr.getkey()
-            c = self.cursor
-            if ch == '\n':
-                if c == self.length:
-                    self.filled = True
-                else:
-                    self._moveCursor(var, True)
-            elif ch == '\x1b':
-                self.cancelled = True
-                self.filled = True
-            elif ch == 'KEY_LEFT' and (self.length - c):
-                self.items[c].moveCursorLeft()
-            elif ch == 'KEY_RIGHT' and (self.length - c):
-                self.items[c].moveCursorRight()
-            elif ch == 'KEY_UP':
-                self._moveCursor(var, val=-1)
-            elif ch == 'KEY_DOWN':
-                self._moveCursor(var)
-            elif ch == '\t':
-                self._moveCursor(var, True)
-            elif ch in chars and (self.length - c):
-                self.items[c].addContent(chars[ch])
-            elif ch == 'KEY_BACKSPACE' and (self.length - c):
-                self.items[c].delChar()
-            if not self.filled:
-                self._update(var)
+
+        while not (self.filled or self.cancelled):
+            ch = stdscr.get_wch()
+
+            if type(ch) is int:
+                if ch == 263:
+                    c = self.cursor
+                    if self.items[c].nature == "text":
+                        self.items[c].del_char()
+                elif ch == 261:
+                    self._move_cursor(3)
+                elif ch == 260:
+                    self._move_cursor(2)
+                elif ch == 259:
+                    self._move_cursor(1)
+                elif ch == 258:
+                    self._move_cursor(0)
+            elif type(ch) is str:
+                if ch == "\n":
+                    if self.cursor == (self.length - 1):
+                        self.filled = True
+                    else:
+                        self._move_cursor(0)
+                elif ch == "\x1b":
+                    self.cancelled = True
+                elif ch == "\t":
+                    # TODO : implement suggestions
+                    self._move_cursor(0)
+                elif ch.isalnum() or ch in "!#$%&'()*+, -./:;<=>?@[]^_`{|}~":
+                    c = self.cursor
+                    if self.items[c].nature in ["text", "date"]:
+                        self.items[c].add_char(ch)
+
+            if not (self.filled or self.cancelled):
+                self._update()
                 self._display(stdscr)
 
     def retrieve(self):
         if self.cancelled:
             return ['' for field in self.items]
         else:
-            return [field.ans() for field in self.items]
+            return [field.get_answer() for field in self.items]
