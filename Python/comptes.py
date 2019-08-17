@@ -86,22 +86,18 @@ def init():
     if not os.path.isdir(c_path):
         os.mkdir(c_path)
 
-    global now
-    now = dt.date.today()
-    month = '%02d' % now.month
-    year = str(now.year)
-
     months = ['01', '02', '03', '04', '05', '06',
               '07', '08', '09', '10', '11', '12']
 
     global keyWords
     keyWords = {
-            'load': _load,
-            'add': _add,
-            'create': _create,
-            # 'mod': _mod,
-            'exit': _exit,
-            # 'save': _save,
+            ':l': _load,
+            ':a': _add,
+            ':i': _create,
+            ':d': _del,
+            ':q': _exit,
+            ':s': _save,
+            ':c': _close,
             # 'rem': _rem,
             # 'debug': _debug,
             # 'reload': _reload,
@@ -114,18 +110,22 @@ def init():
             'fst_launch': first_launch,
             'app_path': a_path,
             'opened_db': "",
-            'orYear': year,
-            'year': year,
-            'orMonth': month,
-            'month': month,
             'months': months,
-            'loaded': False,
-            'data': {},
             'names': {},  # var['names']['Toto'] = frequency of 'Toto'
             'stay': True,
             'cancelled': False,
+            'debug': False,
+            'mode': "global",
+            'selected': 0,
             'cursor': [0, 0],  # var['cursor'] = [cursor.x, cursor.y]
             }
+
+    # read_config(c_path)
+
+
+# def read_config(c_dir):
+#    c_path = c_dir + "config"
+#    os.path.isfile
 
 
 #
@@ -138,7 +138,7 @@ def open_database(db_name):
     if os.path.exists(db_path):
         file_db = sql.connect(db_path + "/data.db")
         var['opened_db'] = db_name
-        log("Ouverture de {0}.".format(db_name), 0)
+        log("Ouverture de '{0}'.".format(db_name), 0)
 
         return file_db
     else:
@@ -151,10 +151,24 @@ def close_database(f_db):
     log("Fermeture de '{0}'.".format(var['opened_db']), 0)
 
     # Save the opened database
-    save_database(f_db)
+    f_db.commit()
 
     # Close the files
     f_db.close()
+
+    var['opened_db'] = ""
+
+
+def delete_database(f_db):
+    log("Suppression de '{0}'.".format(var['opened_db']), 0)
+
+    db_dir = var['app_path'] + var['opened_db']
+    db_file = db_dir + "/data.db"
+
+    f_db.close()
+
+    os.remove(db_file)
+    os.rmdir(db_dir)
 
     var['opened_db'] = ""
 
@@ -222,14 +236,21 @@ def insert_payment(db, a_form):
 
 
 def update_day(db, p_date, p_amount):
-    db.execute("SELECT amount FROM total WHERE date = ?", (p_date,))
+    db.execute("""SELECT amount, date FROM total
+                  WHERE date = (SELECT MAX(date) FROM total
+                                WHERE date <= ?)""", (p_date,))
     c_a = db.fetchone()
+    if var['debug']:
+        log("Jour précédent : " + str(c_a), 4)
 
     if c_a is None:
-        db.execute("INSERT INTO total VALUES (?, ?)", (p_date, p_amount))
+        db.execute("INSERT INTO total VALUES (?, ?)", (p_date, 0))
     else:
-        u_a = p_amount + c_a[0]
-        db.execute("UPDATE total SET amount = ? WHERE date = ?", (u_a, p_date))
+        if p_date != c_a[1]:
+            db.execute("INSERT INTO total VALUES (?, ?)", (p_date, c_a[0]))
+
+    db.execute("UPDATE total SET amount = amount + ? WHERE date >= ?",
+               (p_amount, p_date))
 
 
 #
@@ -299,11 +320,10 @@ def draw_background(key=False):
             stdscr.addch(2, 19, plus)
             stdscr.addch(my - 10, 19, btee)
 
-        stdscr.addstr(my - 2, 1, ">")
-
 
 def draw_payments(db, offset=0):
     my, mx = stdscr.getmaxyx()
+    now = dt.date.today()
 
     # Add titles
     stdscr.addstr(1, 4, "Date")
@@ -328,18 +348,29 @@ def draw_payments(db, offset=0):
 
     pos = 3
     for p in payments:
+        if p[1] > now.strftime("%Y-%m-%d"):
+            col = crs.color_pair(6)
+        else:
+            col = crs.color_pair(7)
+
         # Print the date
         l_d = p[1].split("-")
         l_d.reverse()
-        stdscr.addstr(pos, 2, "/".join(l_d))
+        # if var['mode'] == "edit" and var['selected'] + 3 == pos:
+        #     stdscr.addstr(pos, 2, "/".join(l_d), (col + crs.A_REVERSE))
+        # else:
+        stdscr.addstr(pos, 2, "/".join(l_d), col)
 
         # Print the name
-        stdscr.addstr(pos, 16, p[2])
+        # if var['mode'] == "edit" and var['selected'] + 3 == pos:
+        #     stdscr.addstr(pos, 16, p[2], (col + crs.A_REVERSE))
+        # else:
+        stdscr.addstr(pos, 16, p[2], col)
 
         # Print the associated total amount
         s_c = "{:7.2f}".format(current/100).strip()
-        stdscr.addstr(pos, mx - 3 - len(s_c), s_c)
-        current += p[4]
+        stdscr.addstr(pos, mx - 3 - len(s_c), s_c, col)
+        current -= p[4]
 
         # Print the amount
         if p[4] >= 0:
@@ -351,15 +382,19 @@ def draw_payments(db, offset=0):
 
         pos += 1
 
+    if var['mode'] == "edit":
+        stdscr.chgat(3 + var['selected'], 0, -1, crs.A_BOLD)
+
 
 def draw_info(db):
     my, mx = stdscr.getmaxyx()
     now = dt.date.today()
 
     # Add the text
-    stdscr.addstr(my - 9, mx - 19, now.strftime("%d/%m/%Y"))
-    stdscr.addstr(my - 7, mx - 28, "Mois précédent:")
-    stdscr.addstr(my - 6, mx - 28, "Solde actuel:")
+    stdscr.addstr(my - 9, mx - 28, var['opened_db'])
+    stdscr.addstr(my - 7, mx - 28, "Mois précédent :")
+    stdscr.addstr(my - 6, mx - 28, "Solde actuel :")
+    stdscr.addstr(my - 4, mx - 19, now.strftime("%d/%m/%Y"))
 
     # Get current amount
     db.execute("""SELECT amount FROM total
@@ -391,13 +426,23 @@ def draw_info(db):
 
 
 def draw_log():
-    my, _ = stdscr.getmaxyx()
+    my, mx = stdscr.getmaxyx()
     display_log = var['log'][-6:]
     d_p = 0
 
     for line in display_log:
-        stdscr.addstr(my - 9 + d_p, 1, line[0], crs.color_pair(line[1]))
+        stdscr.addstr(my - 9 + d_p, 1, "{0:<{1}}".format(line[0], mx - 31),
+                      crs.color_pair(line[1]))
         d_p += 1
+
+
+def draw_command(command="", c_x=0):
+    my, mx = stdscr.getmaxyx()
+    stdscr.addstr(my - 2, 1, ' '*(mx - 2))
+    stdscr.addstr(my - 2, 1, "(" + var['mode'].upper() + ")",
+                  crs.color_pair(5))
+    stdscr.addstr(my - 2, 10, command[-(mx - 5):])
+    stdscr.move(my - 2, 10 + c_x)
 
 
 def draw_window():
@@ -418,14 +463,14 @@ def _create():
 
     c_form.fill(stdscr)
 
-    if c_form.cancelled:
-        var['cancelled'] = True
-    else:
+    if not c_form.cancelled:
         db_name, = c_form.retrieve()
         if var['opened_db'] != "":
             close_database(var['f_db'])
 
         var['f_db'] = create_database(db_name)
+
+    var['cancelled'] = True
 
 
 def _load():
@@ -434,32 +479,70 @@ def _load():
 
     l_form.fill(stdscr)
 
-    if l_form.cancelled:
-        var['cancelled'] = True
-    else:
+    if not l_form.cancelled:
         db_name, = l_form.retrieve()
         if var['opened_db'] != "":
             close_database(var['f_db'])
 
         var['f_db'] = open_database(db_name)
-        var['cancelled'] = True
+
+    var['cancelled'] = True
+
+
+def _save():
+    if var['opened_db'] != "":
+        save_database(var['f_db'])
+    else:
+        log("Sauvegarde impossible, pas de compte ouvert.", 1)
+
+    var['cancelled'] = True
+
+
+def _close():
+    if var['opened_db'] != "":
+        close_database(var['f_db'])
+    else:
+        log("Fermeture impossible, pas de compte ouvert.", 1)
+
+    var['cancelled'] = True
+
+
+def _del():
+    if var['opened_db'] != "":
+        d_form = Form("Suppression")
+        d_form.add_carousel("Supprimer " + var['opened_db'], ["Non", "Oui"])
+
+        d_form.fill(stdscr)
+
+        if not d_form.cancelled:
+            confirmation, = d_form.retrieve()
+            if confirmation == "Oui":
+                delete_database(var['f_db'])
+    else:
+        log("Suppression impossible, pas de compte ouvert.", 1)
+
+    var['cancelled'] = True
 
 
 def _add():
-    now = dt.date.today()
-    a_form = Form("Ajout d'un paiement")
-    a_form.add_date("Jour de l'opération", now.strftime("%d/%m/%Y"))
-    a_form.add_text("Nom de l'opération")
-    a_form.add_carousel("Type d'opération", ["Débit", "Crédit"])
-    a_form.add_text("Montant de l'opération")
+    if var['opened_db'] != "":
+        now = dt.date.today()
+        a_form = Form("Ajout d'un paiement")
+        a_form.add_date("Jour de l'opération", now.strftime("%d/%m/%Y"))
+        a_form.add_text("Nom de l'opération")
+        a_form.add_carousel("Type d'opération", ["Débit", "Crédit"])
+        a_form.add_text("Montant de l'opération")
 
-    a_form.fill(stdscr)
+        a_form.fill(stdscr)
 
-    if a_form.cancelled:
-        var['cancelled'] = True
+        if a_form.cancelled:
+            var['cancelled'] = True
+        else:
+            insert_payment(var['f_db'].cursor(), a_form)
+            var['f_db'].commit()
     else:
-        insert_payment(var['f_db'].cursor(), a_form)
-        var['f_db'].commit()
+        log("Ajout impossible, pas de compte ouvert.", 1)
+        var['cancelled'] = True
 
 
 def _exit():
@@ -469,51 +552,60 @@ def _exit():
     var['stay'] = False
 
 
-def getCommand(com=''):
-    ch = ""
+def get_command(com=''):
     command = ""
-    cx = 0
+    c_x = 0
+    stay = True
 
     draw_window()
-    y, x = stdscr.getmaxyx()
 
-    while ch not in ['\n', '\x11']:
-        my, mx = stdscr.getmaxyx()
-
-        if mx > 63 and my > 19:
-            if ch == 263 and cx:
-                command = command[:cx - 1] + command[cx:]
-                cx -= 1
-            elif ch == 260:
-                if cx:
-                    cx -= 1
-            elif ch == 261:
-                if len(command) - cx:
-                    cx += 1
-            elif ch == '\x1b':
-                command = ''
-                cx = 0
-            elif type(ch) is str and ch != "":
-                command = command[:cx] + ch + command[cx:]
-                cx += 1
-
-        log(str(ch), 0)
-        draw_log()
-
-        stdscr.addstr(my - 2, 3, ' '*(mx - 5))
-        stdscr.addstr(my - 2, 3, command[-(mx - 5):])
-        stdscr.move(my - 2, 3 + cx)
+    while stay:
+        draw_window()
+        draw_command(command, c_x)
 
         ch = stdscr.get_wch()
 
-        if (my, mx) != (y, x):
-            draw_window()
-            y, x = my, mx
+        if var['mode'] == "global":
+            if ch == ":":
+                var['mode'] = "command"
+                command = ":"
+                c_x = 1
+                crs.curs_set(2)
+            elif ch == "p":
+                var['mode'] = "edit"
+                crs.curs_set(0)
+        elif var['mode'] == "command":
+            if ch == 263 and c_x > 0:
+                command = command[:c_x - 1] + command[c_x:]
+                c_x -= 1
+            elif ch == 260:
+                if c_x > 0:
+                    c_x -= 1
+            elif ch == 261:
+                if c_x < len(command):
+                    c_x += 1
+            elif ch == "\x1b":
+                command = ""
+                c_x = 0
+                var['mode'] = "global"
+                crs.curs_set(0)
+            elif ch == "\n":
+                return command.split(' ')
+            elif type(ch) is str and ch != "":
+                command = command[:c_x] + ch + command[c_x:]
+                c_x += 1
+        elif var['mode'] == "edit":
+            if ch == 258:
+                var['selected'] += 1
+            elif ch == 259:
+                var['selected'] -= 1
+            elif ch == "\x1b":
+                var['mode'] = "global"
+            log(str(var['selected']), 4)
 
-    if ch == '\x11':
-        var['stay'] = False
-
-    return command.split(' ')
+        if ch == '\x11':
+            var['stay'] = False
+            stay = False
 
 
 # The main loop
@@ -526,13 +618,16 @@ def main():
 
     # Load current month
     draw_window()
-    _create()
+    if var['fst_launch']:
+        _create()
+    elif var['opened_db'] == "":
+        _load()
 
     # The main loop
     while var['stay']:
         var['cancelled'] = False
 
-        command = getCommand()
+        command = get_command()
 
         # Get the input
         action = command.pop(0)
