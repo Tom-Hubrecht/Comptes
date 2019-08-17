@@ -657,8 +657,6 @@ def _remove():
                 var['changed'] = True
                 var['id_list'].pop(var['selected'])
 
-        var['cancelled'] = True
-
 
 def _mod():
     if var['opened_db'] != "" and var['id_list'] != []:
@@ -687,8 +685,6 @@ def _mod():
             change_payment(db, m_id, m_form, o_date, o_amount)
             var['changed'] = True
 
-        var['cancelled'] = True
-
 
 def _exit():
     if var['opened_db'] != "":
@@ -716,10 +712,8 @@ def get_command(com=''):
                 var['mode'] = "command"
                 command = ":"
                 c_x = 1
-                crs.curs_set(2)
             elif ch == "p":
                 var['mode'] = "edit"
-                crs.curs_set(0)
         elif var['mode'] == "command":
             if ch == 263 and c_x > 0:
                 command = command[:c_x - 1] + command[c_x:]
@@ -734,7 +728,6 @@ def get_command(com=''):
                 command = ""
                 c_x = 0
                 var['mode'] = "global"
-                crs.curs_set(0)
             elif ch == "\n":
                 return command.split(' ')
             elif type(ch) is str and ch != "":
