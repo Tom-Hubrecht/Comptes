@@ -4,8 +4,6 @@
 # Import name suggestion
 from Suggestions import prefixMax
 
-# Define a class for the text fields
-
 
 class Textfield:
 

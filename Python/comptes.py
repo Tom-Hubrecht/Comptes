@@ -36,6 +36,56 @@ def get_money(s, t):
         return None
 
 
+def get_date(s):
+    l = s.split("/")
+
+    if len(l) == 3 and l[1] in var['months'] \
+       and int(l[0]) in range(1, var['months'][l[1]] + 1):
+        l.reverse()
+        return "-".join(l)
+    else:
+        log("Date incorrecte '{0}'.".format(s), 1)
+        return None
+
+
+def scroll_up():
+    if var['selected'] > 0:
+        var['selected'] -= 1
+    elif var['selected'] == 0:
+        if var['offset'] > 0:
+            var['offset'] -= 1
+
+
+def scroll_down():
+    my, _ = stdscr.getmaxyx()
+    m_sel = min(my - 13, len(var['id_list'])) - 1
+
+    if var['opened_db'] != "" and var['id_list'] != []:
+        db = var['f_db'].cursor()
+        db.execute("SELECT COUNT(*) FROM payments")
+
+        m_scroll = db.fetchone()[0] - len(var['id_list']) - var['offset']
+    else:
+        m_scroll = 0
+
+    if var['selected'] < m_sel:
+        var['selected'] += 1
+    elif var['selected'] == m_sel:
+        if m_scroll > 0:
+            var['offset'] += 1
+
+
+def verif_scroll():
+    my, _ = stdscr.getmaxyx()
+    m_sel = min(my - 13, len(var['id_list'])) - 1
+
+    if var['selected'] > m_sel:
+        var['selected'] = m_sel
+
+    if len(var['id_list']) < my - 14:
+        var['offset'] = max(0, var['offset'] - (my - 13 - len(var['id_list'])))
+
+
 #
 # Initialize variables
 #
@@ -86,8 +136,8 @@ def init():
     if not os.path.isdir(c_path):
         os.mkdir(c_path)
 
-    months = ['01', '02', '03', '04', '05', '06',
-              '07', '08', '09', '10', '11', '12']
+    months = {'01': 31, '02': 29, '03': 31, '04': 30, '05': 31, '06': 30,
+              '07': 31, '08': 31, '09': 30, '10': 31, '11': 30, '12': 31}
 
     global keyWords
     keyWords = {
@@ -117,12 +167,16 @@ def init():
             'debug': False,
             'mode': "global",
             'selected': 0,
+            'id_list': [],
+            'offset': 0,
+            'changed': False,
             'cursor': [0, 0],  # var['cursor'] = [cursor.x, cursor.y]
             }
 
     # read_config(c_path)
 
 
+# TODO: Implement config file
 # def read_config(c_dir):
 #    c_path = c_dir + "config"
 #    os.path.isfile
@@ -223,16 +277,35 @@ def next_id(db):
 def insert_payment(db, a_form):
     p_id = next_id(db)
     p_date, p_name, p_type, p_amount = a_form.retrieve()
-    p_date = p_date.split("/")
-    p_date.reverse()
-    p_date = "-".join(p_date)
+    p_date = get_date(p_date)
     p_rec = 0
     p_amount = get_money(p_amount, p_type)
 
-    if p_amount is not None:
+    if p_amount is not None and p_date is not None:
         db.execute("""INSERT INTO payments VALUES (?, ?, ?, ?, ?)""",
                    (p_id, p_date, p_name, p_rec, p_amount))
         update_day(db, p_date, p_amount)
+
+
+def delete_payment(db, r_id):
+        db.execute("SELECT date, amount FROM payments WHERE id = ?", (r_id,))
+        r_date, r_amount = db.fetchone()
+
+        update_day(db, r_date, -r_amount)
+
+        db.execute("DELETE FROM payments WHERE id = ?", (r_id,))
+
+
+def change_payment(db, m_id, m_form, o_date, o_amount):
+    m_date, m_name, m_type, m_amount = m_form.retrieve()
+    m_date = get_date(m_date)
+    m_amount = get_money(m_amount, m_type)
+
+    if m_amount is not None and m_date is not None:
+        db.execute("""UPDATE payments SET date = ?, name = ?, amount = ?
+                      WHERE id = ?""", (m_date, m_name, m_amount, m_id))
+        update_day(db, m_date, m_amount)
+        update_day(db, o_date, -o_amount)
 
 
 def update_day(db, p_date, p_amount):
@@ -321,9 +394,11 @@ def draw_background(key=False):
             stdscr.addch(my - 10, 19, btee)
 
 
-def draw_payments(db, offset=0):
+def draw_payments(db):
     my, mx = stdscr.getmaxyx()
     now = dt.date.today()
+    offset = var['offset']
+    var['id_list'] = []
 
     # Add titles
     stdscr.addstr(1, 4, "Date")
@@ -333,7 +408,7 @@ def draw_payments(db, offset=0):
 
     # Gather all payments
     nb_max = my - 13
-    db.execute("""SELECT * FROM payments ORDER BY date DESC, name ASC
+    db.execute("""SELECT * FROM payments ORDER BY date DESC, name ASC, id DESC
                     LIMIT ? OFFSET ?""", (nb_max, offset))
     payments = db.fetchall()
 
@@ -348,6 +423,7 @@ def draw_payments(db, offset=0):
 
     pos = 3
     for p in payments:
+        var['id_list'] += [p[0]]
         if p[1] > now.strftime("%Y-%m-%d"):
             col = crs.color_pair(6)
         else:
@@ -356,34 +432,38 @@ def draw_payments(db, offset=0):
         # Print the date
         l_d = p[1].split("-")
         l_d.reverse()
-        # if var['mode'] == "edit" and var['selected'] + 3 == pos:
-        #     stdscr.addstr(pos, 2, "/".join(l_d), (col + crs.A_REVERSE))
-        # else:
-        stdscr.addstr(pos, 2, "/".join(l_d), col)
+        s_d = " " + "/".join(l_d) + " "
+        if var['mode'] == "edit" and var['selected'] + 3 == pos:
+            stdscr.addstr(pos, 1, s_d, (col + crs.A_REVERSE))
+        else:
+            stdscr.addstr(pos, 1, s_d, col)
 
         # Print the name
-        # if var['mode'] == "edit" and var['selected'] + 3 == pos:
-        #     stdscr.addstr(pos, 16, p[2], (col + crs.A_REVERSE))
-        # else:
-        stdscr.addstr(pos, 16, p[2], col)
+        s_n = "  {0:<{1}}".format(p[2], mx - 41)
+        if var['mode'] == "edit" and var['selected'] + 3 == pos:
+            stdscr.addstr(pos, 14, s_n, (col + crs.A_REVERSE))
+        else:
+            stdscr.addstr(pos, 14, s_n, col)
 
         # Print the associated total amount
-        s_c = "{:7.2f}".format(current/100).strip()
-        stdscr.addstr(pos, mx - 3 - len(s_c), s_c, col)
+        s_c = " {0:>9.2f} ".format(current/100)
+        if var['mode'] == "edit" and var['selected'] + 3 == pos:
+            stdscr.addstr(pos, mx - 12, s_c, (col + crs.A_REVERSE))
+        else:
+            stdscr.addstr(pos, mx - 12, s_c, col)
         current -= p[4]
 
         # Print the amount
-        if p[4] >= 0:
-            s_a = "{:7.2f}".format(p[4]/100).strip()
-            stdscr.addstr(pos, mx - 15 - len(s_a), s_a, crs.color_pair(2))
-        elif p[4] < 0:
-            s_a = "{:7.2f}".format(p[4]/100).strip()
-            stdscr.addstr(pos, mx - 15 - len(s_a), s_a, crs.color_pair(1))
+        s_a = " {0:>9.2f} ".format(p[4]/100)
+        if var['mode'] == "edit" and var['selected'] + 3 == pos:
+            stdscr.addstr(pos, mx - 24, s_a, (col + crs.A_REVERSE))
+        else:
+            if p[4] >= 0:
+                stdscr.addstr(pos, mx - 24, s_a, crs.color_pair(2))
+            elif p[4] < 0:
+                stdscr.addstr(pos, mx - 24, s_a, crs.color_pair(1))
 
         pos += 1
-
-    if var['mode'] == "edit":
-        stdscr.chgat(3 + var['selected'], 0, -1, crs.A_BOLD)
 
 
 def draw_info(db):
@@ -428,7 +508,7 @@ def draw_info(db):
 def draw_log():
     my, mx = stdscr.getmaxyx()
     display_log = var['log'][-6:]
-    d_p = 0
+    d_p = 6 - len(display_log)
 
     for line in display_log:
         stdscr.addstr(my - 9 + d_p, 1, "{0:<{1}}".format(line[0], mx - 31),
@@ -436,7 +516,13 @@ def draw_log():
         d_p += 1
 
 
-def draw_command(command="", c_x=0):
+# TODO: Only redraw highlighted line ?
+# def draw_highlight(n_l):
+#    _, mx = stdscr.getmaxyx()
+#    for i in range(1, mx - 1):
+
+
+def draw_command(command, c_x):
     my, mx = stdscr.getmaxyx()
     stdscr.addstr(my - 2, 1, ' '*(mx - 2))
     stdscr.addstr(my - 2, 1, "(" + var['mode'].upper() + ")",
@@ -445,12 +531,18 @@ def draw_command(command="", c_x=0):
     stdscr.move(my - 2, 10 + c_x)
 
 
-def draw_window():
-    draw_background()
+def draw_window(b=True, i=True, p=True, l=True, c=True, cm="", c_x=0):
+    if b:
+        draw_background()
     if var['opened_db'] != "":
-        draw_info(var['f_db'].cursor())
-        draw_payments(var['f_db'].cursor())
-    draw_log()
+        if i:
+            draw_info(var['f_db'].cursor())
+        if p:
+            draw_payments(var['f_db'].cursor())
+    if l:
+        draw_log()
+    if c:
+        draw_command(cm, c_x)
 
 
 #
@@ -545,6 +637,59 @@ def _add():
         var['cancelled'] = True
 
 
+def _remove():
+    if var['opened_db'] != "" and var['id_list'] != []:
+        r_id = var['id_list'][var['selected']]
+        db = var['f_db'].cursor()
+        db.execute("SELECT name FROM payments WHERE id = ?", (r_id,))
+        r_name, = db.fetchone()
+
+        r_form = Form("Suppression d'un paiement")
+        r_form.add_carousel("Supprimer '{0}' ?".format(r_name), ["Non", "Oui"])
+
+        r_form.fill(stdscr)
+
+        if not r_form.cancelled:
+            confirmation, = r_form.retrieve()
+            if confirmation == "Oui":
+                delete_payment(db, r_id)
+                var['f_db'].commit()
+                var['changed'] = True
+                var['id_list'].pop(var['selected'])
+
+        var['cancelled'] = True
+
+
+def _mod():
+    if var['opened_db'] != "" and var['id_list'] != []:
+        m_id = var['id_list'][var['selected']]
+        db = var['f_db'].cursor()
+        db.execute("SELECT * FROM payments WHERE id = ?", (m_id,))
+        _, o_date, m_name, _, o_amount = db.fetchone()
+
+        m_date = o_date.split("-")
+        m_date.reverse()
+        m_date = "/".join(m_date)
+
+        m_form = Form("Modification d'un paiement")
+        m_form.add_date("Jour de l'opération", m_date)
+        m_form.add_text("Nom de l'opération", m_name)
+        if o_amount > 0:
+            m_form.add_carousel("Type d'opération", ["Crédit", "Débit"])
+        else:
+            m_form.add_carousel("Type d'opération", ["Débit", "Crédit"])
+        m_form.add_text("Montant de l'opération",
+                        "{0:9.2f}".format(abs(o_amount/100)).strip())
+
+        m_form.fill(stdscr)
+
+        if not m_form.cancelled:
+            change_payment(db, m_id, m_form, o_date, o_amount)
+            var['changed'] = True
+
+        var['cancelled'] = True
+
+
 def _exit():
     if var['opened_db'] != "":
         close_database(var['f_db'])
@@ -557,15 +702,16 @@ def get_command(com=''):
     c_x = 0
     stay = True
 
+    crs.curs_set(0)
     draw_window()
 
     while stay:
-        draw_window()
-        draw_command(command, c_x)
-
         ch = stdscr.get_wch()
 
-        if var['mode'] == "global":
+        if ch == 410:  # Window resized
+            verif_scroll()
+            draw_window(cm=command, c_x=0)
+        elif var['mode'] == "global":
             if ch == ":":
                 var['mode'] = "command"
                 command = ":"
@@ -596,12 +742,32 @@ def get_command(com=''):
                 c_x += 1
         elif var['mode'] == "edit":
             if ch == 258:
-                var['selected'] += 1
+                scroll_down()
             elif ch == 259:
-                var['selected'] -= 1
+                scroll_up()
+            elif ch == "d":
+                crs.curs_set(2)
+                _remove()
+            elif ch == "e":
+                crs.curs_set(2)
+                _mod()
             elif ch == "\x1b":
                 var['mode'] = "global"
-            log(str(var['selected']), 4)
+
+        if var['mode'] == "command":
+            crs.curs_set(2)
+            draw_window(False, False, False, True, True, command, c_x)
+        elif var['mode'] == "edit":
+            crs.curs_set(0)
+            if var['changed']:
+                verif_scroll()
+                draw_window()
+                var['changed'] = False
+            else:
+                draw_window(b=False, i=False)
+        elif var['mode'] == "global":
+            crs.curs_set(0)
+            draw_window(b=False, i=False)
 
         if ch == '\x11':
             var['stay'] = False
