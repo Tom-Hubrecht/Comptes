@@ -3,6 +3,7 @@
 
 # Import necessary modules
 import curses as crs
+import configparser as cfg
 import datetime as dt
 import os
 import sqlite3 as sql
@@ -11,6 +12,8 @@ import sqlite3 as sql
 # Import Classes
 from Form import Form
 
+
+# TODO: Add graphing ability
 
 #
 # Basic functions
@@ -125,7 +128,7 @@ def init():
     # Checks if the necessary directories exist and if not create them
     u_path = os.path.expanduser("~/")
     a_path = u_path + ("comptes/")
-    c_path = u_path + (".config/comptes/")
+    c_path = u_path + (".config/comptes.ini")
 
     first_launch = False
 
@@ -133,8 +136,10 @@ def init():
         os.mkdir(a_path)
         first_launch = True
 
-    if not os.path.isdir(c_path):
-        os.mkdir(c_path)
+    if not os.path.isfile(c_path):
+        config = init_config(c_path)
+    else:
+        config = read_config(c_path)
 
     months = {'01': 31, '02': 29, '03': 31, '04': 30, '05': 31, '06': 30,
               '07': 31, '08': 31, '09': 30, '10': 31, '11': 30, '12': 31}
@@ -158,10 +163,10 @@ def init():
     var = {
             'log': [],
             'fst_launch': first_launch,
+            'cfg_path': c_path,
             'app_path': a_path,
             'opened_db': "",
             'months': months,
-            'names': {},  # var['names']['Toto'] = frequency of 'Toto'
             'stay': True,
             'cancelled': False,
             'debug': False,
@@ -170,16 +175,30 @@ def init():
             'id_list': [],
             'offset': 0,
             'changed': False,
-            'cursor': [0, 0],  # var['cursor'] = [cursor.x, cursor.y]
+            'config': config
             }
 
-    # read_config(c_path)
+
+def init_config(c_path):
+    config = cfg.ConfigParser()
+    config['GENERAL'] = {'last_opened': ""}
+
+    with open(c_path, "w") as f_config:
+        config.write(f_config)
+
+    return config
 
 
-# TODO: Implement config file
-# def read_config(c_dir):
-#    c_path = c_dir + "config"
-#    os.path.isfile
+def read_config(c_path):
+    config = cfg.ConfigParser()
+    config.read(c_path)
+
+    return config
+
+
+def save_config(c_path):
+    with open(c_path, "w") as f_config:
+        var['config'].write(f_config)
 
 
 #
@@ -210,6 +229,7 @@ def close_database(f_db):
     # Close the files
     f_db.close()
 
+    var['config']['GENERAL']['last_opened'] = var['opened_db']
     var['opened_db'] = ""
 
 
@@ -516,12 +536,6 @@ def draw_log():
         d_p += 1
 
 
-# TODO: Only redraw highlighted line ?
-# def draw_highlight(n_l):
-#    _, mx = stdscr.getmaxyx()
-#    for i in range(1, mx - 1):
-
-
 def draw_command(command, c_x):
     my, mx = stdscr.getmaxyx()
     stdscr.addstr(my - 2, 1, ' '*(mx - 2))
@@ -584,6 +598,7 @@ def _load():
 def _save():
     if var['opened_db'] != "":
         save_database(var['f_db'])
+        save_config(var['cfg_path'])
     else:
         log("Sauvegarde impossible, pas de compte ouvert.", 1)
 
@@ -689,6 +704,7 @@ def _mod():
 def _exit():
     if var['opened_db'] != "":
         close_database(var['f_db'])
+        save_config(var['cfg_path'])
 
     var['stay'] = False
 
@@ -779,8 +795,8 @@ def main():
     draw_window()
     if var['fst_launch']:
         _create()
-    elif var['opened_db'] == "":
-        _load()
+    elif var['config']['GENERAL']['last_opened'] != "":
+        var['f_db'] = open_database(var['config']['GENERAL']['last_opened'])
 
     # The main loop
     while var['stay']:
