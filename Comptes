@@ -1,7 +1,0 @@
-#!/usr/bin/python3
-
-import os
-
-options = " --hide-menubar --geometry=120x48 --title='Comptes' --window"
-
-os.system("gnome-terminal" + options + " -e './Python/main.py'")
