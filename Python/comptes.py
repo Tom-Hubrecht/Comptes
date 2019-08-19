@@ -13,7 +13,7 @@ import sqlite3 as sql
 from Form import Form
 
 
-# TODO: Add graphing ability
+# TODO: Add graphing ability and suggestions
 
 #
 # Basic functions
