@@ -146,37 +146,33 @@ def init():
 
     global keyWords
     keyWords = {
-            ':l': _load,
-            ':a': _add,
-            ':i': _create,
-            ':d': _del,
-            ':q': _exit,
-            ':s': _save,
-            ':c': _close,
-            # 'rem': _rem,
-            # 'debug': _debug,
-            # 'reload': _reload,
-            # 'help': _help
-            }
+        ':l': _load,
+        ':a': _add,
+        ':i': _create,
+        ':d': _del,
+        ':q': _exit,
+        ':s': _save,
+        ':c': _close,
+        }
 
     global var
     var = {
-            'log': [],
-            'fst_launch': first_launch,
-            'cfg_path': c_path,
-            'app_path': a_path,
-            'opened_db': "",
-            'months': months,
-            'stay': True,
-            'cancelled': False,
-            'debug': False,
-            'mode': "global",
-            'selected': 0,
-            'id_list': [],
-            'offset': 0,
-            'changed': False,
-            'config': config
-            }
+        'log': [],
+        'fst_launch': first_launch,
+        'cfg_path': c_path,
+        'app_path': a_path,
+        'opened_db': "",
+        'months': months,
+        'stay': True,
+        'cancelled': False,
+        'debug': False,
+        'mode': "global",
+        'selected': 0,
+        'id_list': [],
+        'offset': 0,
+        'changed': False,
+        'config': config
+        }
 
 
 def init_config(c_path):
@@ -428,7 +424,7 @@ def draw_payments(db):
 
     # Gather all payments
     nb_max = my - 13
-    db.execute("""SELECT * FROM payments ORDER BY date DESC, name ASC, id DESC
+    db.execute("""SELECT * FROM payments ORDER BY date DESC, id DESC
                     LIMIT ? OFFSET ?""", (nb_max, offset))
     payments = db.fetchall()
 
@@ -519,8 +515,10 @@ def draw_info(db):
 
     # Display the amounts
     stdscr.addstr(my - 7, mx - 11, p_a, crs.color_pair(3))
-    if p_a > c_a:
+    if float(c_a) <= 0:
         stdscr.addstr(my - 6, mx - 11, c_a, crs.color_pair(1))
+    elif float(p_a) > float(c_a):
+        stdscr.addstr(my - 6, mx - 11, c_a, crs.color_pair(4))
     else:
         stdscr.addstr(my - 6, mx - 11, c_a, crs.color_pair(2))
 

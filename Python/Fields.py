@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-# Import name suggestion
-from Suggestions import prefixMax
+"""Module for the Form fields classes"""
 
 
-class Textfield:
+class Textfield(object):
 
     def __init__(self, text, content='', suggestions=''):
         self.text = text
@@ -17,6 +15,8 @@ class Textfield:
         self.s_c = max(0, self.crs - self._max_len())
 
     def get_str(self):
+        """Returns the content to show"""
+
         max_len = self._max_len()
 
         # What part of the answer to show
@@ -25,6 +25,7 @@ class Textfield:
         return self.text + " : " + content
 
     def get_suggestion(self):
+        """Returns the best suggestion given the content"""
         suggest = ""
 
         return suggest
